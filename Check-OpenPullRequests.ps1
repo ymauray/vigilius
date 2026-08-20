@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Utilise le CLI `gh` pour lister les dépôts appartenant à l'utilisateur authentifié et aux
-    organisations listées dans $OrgsToCheck, puis interroge chaque dépôt pour récupérer ses
+    organisations listées dans config.psd1, puis interroge chaque dépôt pour récupérer ses
     pull requests ouvertes. Les résultats sont mis en cache pendant 30 minutes par dépôt.
 
 .PARAMETER IncludeForks
@@ -54,17 +54,6 @@ if ($Help) {
     exit 0
 }
 
-# Organisations à vérifier en plus des dépôts personnels (pas toujours créées par moi, mais j'y suis admin)
-$OrgsToCheck = @(
-    'my-nanuq',
-    'frenchguych',
-    'euterpiaradio',
-    'picaster',
-    'tetrixel',
-    'sandrinekohler',
-    'amaurybennett'
-)
-
 $ErrorActionPreference = 'Stop'
 $DependabotAuthors = @(
     'dependabot',
@@ -72,6 +61,21 @@ $DependabotAuthors = @(
     'app/dependabot'
 )
 $CacheDuration = [TimeSpan]::FromMinutes(30)
+$configFile = Join-Path $PSScriptRoot 'config.psd1'
+
+if (-not (Test-Path $configFile)) {
+    Write-Error "Le fichier de configuration '$configFile' est introuvable. Copiez config.psd1.sample vers config.psd1 et adaptez la liste des organisations."
+    exit 1
+}
+
+try {
+    $config = Import-PowerShellDataFile -Path $configFile
+    $OrgsToCheck = @($config.Organizations)
+}
+catch {
+    Write-Error "Impossible de charger le fichier de configuration '$configFile' : $_"
+    exit 1
+}
 
 if ($env:LOCALAPPDATA) {
     $cacheDirectory = Join-Path $env:LOCALAPPDATA 'Vigilius'
