@@ -1,0 +1,6 @@
+@{
+    Organizations = @(
+        'example-organization'
+        'another-organization'
+    )
+}

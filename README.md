@@ -2,6 +2,24 @@
 
 `Check-OpenPullRequests.ps1` recense les pull requests ouvertes des dépôts personnels GitHub de l'utilisateur authentifié ainsi que de plusieurs organisations configurées.
 
+## Configuration
+
+Copiez le modèle de configuration, puis remplacez les organisations d'exemple par celles à vérifier :
+
+```powershell
+Copy-Item config.psd1.sample config.psd1
+```
+
+Le fichier `config.psd1` n'est pas suivi par Git. Il contient la clé `Organizations`, une liste de noms d'organisations GitHub :
+
+```powershell
+@{
+  Organizations = @(
+    'mon-organisation'
+  )
+}
+```
+
 ## Prérequis
 
 - PowerShell
