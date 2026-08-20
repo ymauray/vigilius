@@ -1,0 +1,69 @@
+# Vigilius
+
+`Check-OpenPullRequests.ps1` recense les pull requests ouvertes des dépôts personnels GitHub de l'utilisateur authentifié ainsi que de plusieurs organisations configurées.
+
+## Prérequis
+
+- PowerShell
+- [GitHub CLI](https://cli.github.com/) installé et authentifié :
+
+  ```powershell
+  gh auth login
+  ```
+
+## Utilisation
+
+Analyser les dépôts personnels et les organisations configurées :
+
+```powershell
+.\Check-OpenPullRequests.ps1
+```
+
+Analyser les dépôts d'un propriétaire précis :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -Owner mon-organisation
+```
+
+Inclure les forks :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -IncludeForks
+```
+
+Afficher l'aide complète :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -Help
+```
+
+## Cache
+
+Les résultats sont conservés pendant 30 minutes par dépôt afin de limiter les appels à GitHub. Le cache contient l'horodatage de vérification et les pull requests ouvertes.
+
+- Windows : `%LOCALAPPDATA%\Vigilius\open-pull-requests.json`
+- autres plateformes : `~/.cache/vigilius/open-pull-requests.json`
+
+Forcer une interrogation GitHub sans supprimer le cache :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -IgnoreCache
+```
+
+Supprimer le cache avant l'analyse :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -ClearCache
+```
+
+## Pull requests Dependabot
+
+Après l'analyse, le script propose de fusionner les pull requests ouvertes créées par Dependabot. Les PR sont traitées dépôt par dépôt, dans l'ordre de leur ouverture.
+
+Chaque fusion est tentée avec la stratégie de merge standard. Les protections de branche, les vérifications, les approbations et les conflits ne sont pas contournés ; les échecs sont signalés dans le bilan final pour traitement manuel. Toute tentative de fusion, réussie ou non, invalide le cache du dépôt concerné.
+
+Pour ne pas demander confirmation :
+
+```powershell
+.\Check-OpenPullRequests.ps1 -MergeDependabot
+```
