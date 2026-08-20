@@ -6,7 +6,7 @@
 .DESCRIPTION
     Utilise le CLI `gh` pour lister les dépôts appartenant à l'utilisateur authentifié et aux
     organisations listées dans $OrgsToCheck, puis interroge chaque dépôt pour récupérer ses
-    pull requests ouvertes.
+    pull requests ouvertes. Les résultats sont mis en cache pendant 30 minutes par dépôt.
 
 .PARAMETER IncludeForks
     Inclut également les dépôts qui sont des forks (exclus par défaut).
@@ -17,6 +17,15 @@
 .PARAMETER MergeDependabot
     Tente de merger automatiquement les pull requests ouvertes créées par Dependabot, sans demander confirmation.
 
+.PARAMETER ClearCache
+    Supprime le cache local avant de lancer l'analyse.
+
+.PARAMETER IgnoreCache
+    Ignore le cache local pendant l'analyse sans le supprimer.
+
+.PARAMETER Help
+    Affiche l'aide et les options disponibles.
+
 .EXAMPLE
     ./Check-OpenPullRequests.ps1
 
@@ -25,14 +34,25 @@
 
 .EXAMPLE
     ./Check-OpenPullRequests.ps1 -MergeDependabot
+
+.EXAMPLE
+    ./Check-OpenPullRequests.ps1 -IgnoreCache
 #>
 
 [CmdletBinding()]
 param(
     [switch]$IncludeForks,
     [string]$Owner,
-    [switch]$MergeDependabot
+    [switch]$MergeDependabot,
+    [switch]$ClearCache,
+    [switch]$IgnoreCache,
+    [switch]$Help
 )
+
+if ($Help) {
+    Get-Help $PSCommandPath -Detailed
+    exit 0
+}
 
 # Organisations à vérifier en plus des dépôts personnels (pas toujours créées par moi, mais j'y suis admin)
 $OrgsToCheck = @(
@@ -51,6 +71,64 @@ $DependabotAuthors = @(
     'dependabot[bot]',
     'app/dependabot'
 )
+$CacheDuration = [TimeSpan]::FromMinutes(30)
+
+if ($env:LOCALAPPDATA) {
+    $cacheDirectory = Join-Path $env:LOCALAPPDATA 'Vigilius'
+}
+else {
+    $cacheDirectory = Join-Path (Join-Path $HOME '.cache') 'vigilius'
+}
+
+$cacheFile = Join-Path $cacheDirectory 'open-pull-requests.json'
+
+if ($ClearCache -and (Test-Path $cacheFile)) {
+    Remove-Item -Path $cacheFile
+    Write-Host "Cache local supprimé." -ForegroundColor Yellow
+}
+
+function Get-PullRequestCache {
+    if (-not (Test-Path $cacheFile)) {
+        return @{}
+    }
+
+    try {
+        $cacheContent = Get-Content -Raw $cacheFile
+        if ([string]::IsNullOrWhiteSpace($cacheContent)) {
+            return @{}
+        }
+
+        $cachedRepositories = $cacheContent | ConvertFrom-Json
+        $cache = @{}
+        foreach ($property in $cachedRepositories.PSObject.Properties) {
+            $cache[$property.Name] = $property.Value
+        }
+
+        return $cache
+    }
+    catch {
+        Write-Warning "Le cache '$cacheFile' est illisible et sera remplacé : $_"
+        return @{}
+    }
+}
+
+function Save-PullRequestCache([hashtable]$Cache) {
+    if (-not (Test-Path $cacheDirectory)) {
+        New-Item -ItemType Directory -Path $cacheDirectory | Out-Null
+    }
+
+    $Cache | ConvertTo-Json -Depth 5 | Set-Content -Path $cacheFile -Encoding utf8
+}
+
+function Test-CacheEntryIsValid($CacheEntry) {
+    try {
+        $checkedAt = [DateTimeOffset]$CacheEntry.CheckedAt
+        return (([DateTimeOffset]::UtcNow - $checkedAt) -lt $CacheDuration)
+    }
+    catch {
+        return $false
+    }
+}
 
 # Vérifie que gh est installé et authentifié
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -97,29 +175,46 @@ if (-not $repos -or $repos.Count -eq 0) {
 Write-Host "Analyse de $($repos.Count) dépôt(s)...`n" -ForegroundColor Cyan
 
 $results = @()
+$cache = Get-PullRequestCache
 
 foreach ($repo in $repos) {
     $repoName = $repo.nameWithOwner
-    Write-Host "Vérification de $repoName..." -ForegroundColor DarkGray
+    $pullRequests = @()
 
-    try {
-        $prJson = gh pr list --repo $repoName --state open --json number,title,author,createdAt --limit 100
-        $prs = $prJson | ConvertFrom-Json
+    if (-not $IgnoreCache -and $cache.ContainsKey($repoName) -and (Test-CacheEntryIsValid $cache[$repoName])) {
+        Write-Host "Utilisation du cache pour $repoName..." -ForegroundColor DarkGray
+        $pullRequests = @($cache[$repoName].PullRequests)
     }
-    catch {
-        Write-Warning "Impossible de récupérer les PR pour $repoName : $_"
-        continue
-    }
+    else {
+        Write-Host "Vérification de $repoName..." -ForegroundColor DarkGray
 
-    foreach ($pr in $prs) {
-        $results += [PSCustomObject]@{
-            Repo      = $repoName
-            Number    = $pr.number
-            Title     = $pr.title
-            Author    = $pr.author.login
-            CreatedAt = $pr.createdAt
+        try {
+            $prJson = gh pr list --repo $repoName --state open --json number,title,author,createdAt --limit 100
+            $prs = $prJson | ConvertFrom-Json
         }
+        catch {
+            Write-Warning "Impossible de récupérer les PR pour $repoName : $_"
+            continue
+        }
+
+        $pullRequests = @($prs | ForEach-Object {
+            [PSCustomObject]@{
+                Repo = $repoName
+                Number = $_.number
+                Title = $_.title
+                Author = $_.author.login
+                CreatedAt = $_.createdAt
+            }
+        })
+
+        $cache[$repoName] = [PSCustomObject]@{
+            CheckedAt = [DateTimeOffset]::UtcNow.ToString('O')
+            PullRequests = $pullRequests
+        }
+        Save-PullRequestCache $cache
     }
+
+    $results += $pullRequests
 }
 
 Write-Host ""
@@ -162,16 +257,19 @@ foreach ($repository in ($dependabotPullRequests | Group-Object Repo | Sort-Obje
                 Status = 'Fusionnée'
                 Details = ''
             }
-            continue
+        }
+        else {
+            Write-Warning "Impossible de merger $($pullRequest.Repo)#$($pullRequest.Number) : $mergeOutput"
+            $mergeResults += [PSCustomObject]@{
+                Repo = $pullRequest.Repo
+                Number = $pullRequest.Number
+                Status = 'Échec'
+                Details = $mergeOutput
+            }
         }
 
-        Write-Warning "Impossible de merger $($pullRequest.Repo)#$($pullRequest.Number) : $mergeOutput"
-        $mergeResults += [PSCustomObject]@{
-            Repo = $pullRequest.Repo
-            Number = $pullRequest.Number
-            Status = 'Échec'
-            Details = $mergeOutput
-        }
+        $null = $cache.Remove($pullRequest.Repo)
+        Save-PullRequestCache $cache
     }
 }
 
