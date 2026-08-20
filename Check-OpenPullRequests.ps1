@@ -14,17 +14,24 @@
 .PARAMETER Owner
     Nom du propriétaire (utilisateur ou organisation) à interroger, au lieu de la liste par défaut.
 
+.PARAMETER MergeDependabot
+    Tente de merger automatiquement les pull requests ouvertes créées par Dependabot, sans demander confirmation.
+
 .EXAMPLE
     ./Check-OpenPullRequests.ps1
 
 .EXAMPLE
     ./Check-OpenPullRequests.ps1 -Owner "mon-organisation" -IncludeForks
+
+.EXAMPLE
+    ./Check-OpenPullRequests.ps1 -MergeDependabot
 #>
 
 [CmdletBinding()]
 param(
     [switch]$IncludeForks,
-    [string]$Owner
+    [string]$Owner,
+    [switch]$MergeDependabot
 )
 
 # Organisations à vérifier en plus des dépôts personnels (pas toujours créées par moi, mais j'y suis admin)
@@ -39,6 +46,11 @@ $OrgsToCheck = @(
 )
 
 $ErrorActionPreference = 'Stop'
+$DependabotAuthors = @(
+    'dependabot',
+    'dependabot[bot]',
+    'app/dependabot'
+)
 
 # Vérifie que gh est installé et authentifié
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -120,3 +132,48 @@ else {
     $results | Sort-Object Repo, Number | Format-Table Repo, Number, Title, Author, CreatedAt -AutoSize
 }
 
+$dependabotPullRequests = @($results | Where-Object { $_.Author -in $DependabotAuthors })
+
+if ($dependabotPullRequests.Count -eq 0) {
+    Write-Host "Aucune pull request Dependabot ouverte trouvée." -ForegroundColor Yellow
+    exit 0
+}
+
+if (-not $MergeDependabot) {
+    $answer = Read-Host "`nTenter de merger automatiquement les $($dependabotPullRequests.Count) pull request(s) Dependabot ? (o/N)"
+    if ($answer.Trim().ToLowerInvariant() -notin @('o', 'oui')) {
+        Write-Host "Aucune pull request Dependabot n'a été mergée." -ForegroundColor Yellow
+        exit 0
+    }
+}
+
+$mergeResults = @()
+
+foreach ($repository in ($dependabotPullRequests | Group-Object Repo | Sort-Object Name)) {
+    foreach ($pullRequest in ($repository.Group | Sort-Object CreatedAt)) {
+        Write-Host "Tentative de fusion de $($pullRequest.Repo)#$($pullRequest.Number)..." -ForegroundColor DarkGray
+        $mergeOutput = (& gh pr merge $pullRequest.Number --repo $pullRequest.Repo --merge 2>&1 | Out-String).Trim()
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Fusionnée : $($pullRequest.Repo)#$($pullRequest.Number)" -ForegroundColor Green
+            $mergeResults += [PSCustomObject]@{
+                Repo = $pullRequest.Repo
+                Number = $pullRequest.Number
+                Status = 'Fusionnée'
+                Details = ''
+            }
+            continue
+        }
+
+        Write-Warning "Impossible de merger $($pullRequest.Repo)#$($pullRequest.Number) : $mergeOutput"
+        $mergeResults += [PSCustomObject]@{
+            Repo = $pullRequest.Repo
+            Number = $pullRequest.Number
+            Status = 'Échec'
+            Details = $mergeOutput
+        }
+    }
+}
+
+Write-Host "`nBilan des fusions Dependabot :" -ForegroundColor Cyan
+$mergeResults | Format-Table Repo, Number, Status, Details -AutoSize
