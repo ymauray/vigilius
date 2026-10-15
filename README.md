@@ -78,7 +78,7 @@ Supprimer le cache avant l'analyse :
 
 Après l'analyse, le script propose de fusionner les pull requests ouvertes créées par Dependabot. Les PR sont traitées dépôt par dépôt, dans l'ordre de leur ouverture.
 
-Chaque fusion est tentée avec la stratégie de merge standard. Les protections de branche, les vérifications, les approbations et les conflits ne sont pas contournés ; les échecs sont signalés dans le bilan final pour traitement manuel. Toute tentative de fusion, réussie ou non, invalide le cache du dépôt concerné.
+Chaque fusion utilise la méthode autorisée par le dépôt, par ordre de préférence : squash, merge standard, rebase. Les protections de branche, les vérifications, les approbations et les conflits ne sont pas contournés ; les échecs sont signalés dans le bilan final pour traitement manuel. Les PR dont des vérifications (CI) sont encore en cours sont ignorées et signalées comme telles dans le bilan, sans tentative de fusion ni invalidation du cache. Toute tentative de fusion, réussie ou non, invalide le cache du dépôt concerné.
 
 Pour ne pas demander confirmation :
 
