@@ -1,0 +1,21 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Le défaut du dépôt est la lecture seule : seule la publication de la release écrit.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Créer la release GitHub
+        run: gh release create "${{ github.ref_name }}" Check-OpenPullRequests.ps1 config.psd1.sample --title "${{ github.ref_name }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
