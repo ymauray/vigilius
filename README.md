@@ -1,5 +1,9 @@
 # Vigilius
 
+[![CI](https://github.com/ymauray/vigilius/actions/workflows/ci.yml/badge.svg)](https://github.com/ymauray/vigilius/actions/workflows/ci.yml)
+[![Licence : MIT](https://img.shields.io/github/license/ymauray/vigilius)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/ymauray/vigilius)](https://github.com/ymauray/vigilius/releases)
+
 `Check-OpenPullRequests.ps1` recense les pull requests ouvertes des dépôts personnels GitHub de l'utilisateur authentifié ainsi que de plusieurs organisations configurées.
 
 ## Configuration
@@ -85,3 +89,15 @@ Pour ne pas demander confirmation :
 ```powershell
 .\Check-OpenPullRequests.ps1 -MergeDependabot
 ```
+
+## Intégration continue et releases
+
+- `.github/workflows/ci.yml` : sur chaque push et pull request vers `main`, vérifie la syntaxe du script et lance PSScriptAnalyzer (erreurs seulement). Le job `lint` est un check requis sur `main`.
+- `.github/workflows/release.yml` : sur un tag `vX.Y.Z`, crée la release GitHub avec `Check-OpenPullRequests.ps1` et `config.psd1.sample` en pièces jointes. Aucun outil externe n'intervient.
+- Dependabot met à jour les actions GitHub chaque semaine.
+
+Pour publier une version : `git tag vX.Y.Z` puis `git push origin vX.Y.Z`.
+
+## Contribuer
+
+Voir [CONTRIBUTING.md](CONTRIBUTING.md). Le projet est publié sous [licence MIT](LICENSE).
