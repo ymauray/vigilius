@@ -3,6 +3,7 @@
 [![CI](https://github.com/ymauray/vigilius/actions/workflows/ci.yml/badge.svg)](https://github.com/ymauray/vigilius/actions/workflows/ci.yml)
 [![Licence : MIT](https://img.shields.io/github/license/ymauray/vigilius)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ymauray/vigilius)](https://github.com/ymauray/vigilius/releases)
+[![repocheck](https://img.shields.io/badge/repocheck%201.3.0-100%2F100-brightgreen)](https://github.com/ymauray/repocheck)
 
 `Check-OpenPullRequests.ps1` recense les pull requests ouvertes des dépôts personnels GitHub de l'utilisateur authentifié ainsi que de plusieurs organisations configurées.
 
