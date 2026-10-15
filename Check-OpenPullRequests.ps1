@@ -246,12 +246,59 @@ if (-not $MergeDependabot) {
     }
 }
 
+function Get-MergeMethod {
+    param([Parameter(Mandatory)][string]$Repo)
+
+    # Squash en priorité, puis merge standard, puis rebase, selon ce que le dépôt autorise.
+    $json = & gh repo view $Repo --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed 2>$null | Out-String
+    if ($LASTEXITCODE -eq 0 -and $json.Trim()) {
+        $settings = $json | ConvertFrom-Json
+        if ($settings.squashMergeAllowed) { return '--squash' }
+        if ($settings.mergeCommitAllowed) { return '--merge' }
+        if ($settings.rebaseMergeAllowed) { return '--rebase' }
+    }
+
+    return '--merge'
+}
+
+function Test-ChecksRunning {
+    param(
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][int]$Number
+    )
+
+    $json = & gh pr view $Number --repo $Repo --json statusCheckRollup 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0 -or -not $json.Trim()) { return $false }
+
+    $checks = @(($json | ConvertFrom-Json).statusCheckRollup)
+    foreach ($check in $checks) {
+        # CheckRun : status != COMPLETED ; StatusContext : state PENDING/EXPECTED
+        if ($check.status -and $check.status -ne 'COMPLETED') { return $true }
+        if ($check.state -in @('PENDING', 'EXPECTED')) { return $true }
+    }
+
+    return $false
+}
+
 $mergeResults = @()
 
 foreach ($repository in ($dependabotPullRequests | Group-Object Repo | Sort-Object Name)) {
+    $mergeMethod = Get-MergeMethod -Repo $repository.Name
+
     foreach ($pullRequest in ($repository.Group | Sort-Object CreatedAt)) {
+        if (Test-ChecksRunning -Repo $pullRequest.Repo -Number $pullRequest.Number) {
+            Write-Host "Ignorée (CI en cours) : $($pullRequest.Repo)#$($pullRequest.Number)" -ForegroundColor Yellow
+            $mergeResults += [PSCustomObject]@{
+                Repo = $pullRequest.Repo
+                Number = $pullRequest.Number
+                Status = 'Ignorée'
+                Details = 'CI en cours'
+            }
+            continue
+        }
+
         Write-Host "Tentative de fusion de $($pullRequest.Repo)#$($pullRequest.Number)..." -ForegroundColor DarkGray
-        $mergeOutput = (& gh pr merge $pullRequest.Number --repo $pullRequest.Repo --merge 2>&1 | Out-String).Trim()
+        $mergeOutput = (& gh pr merge $pullRequest.Number --repo $pullRequest.Repo $mergeMethod 2>&1 | Out-String).Trim()
 
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Fusionnée : $($pullRequest.Repo)#$($pullRequest.Number)" -ForegroundColor Green
